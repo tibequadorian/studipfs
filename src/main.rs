@@ -1,13 +1,15 @@
+use libc::ENOENT;
 use std::ffi::OsStr;
 use std::time::{Duration, UNIX_EPOCH};
 use std::collections::HashMap;
 use fuse::{Filesystem, Request, ReplyData, ReplyEntry, ReplyAttr, ReplyDirectory, FileAttr, FileType, FUSE_ROOT_ID};
-use libc::ENOENT;
+use ttl_cache::TtlCache;
 
 mod api;
 mod logins;
 
-const TTL: Duration = Duration::from_secs(1);
+
+const TTL: Duration = Duration::from_secs(60);
 
 type ID = String;
 
@@ -61,6 +63,7 @@ struct StudIPFS {
     client: api::StudIPClient,
     inodes: HashMap<ID, u64>,
     entries: HashMap<u64, StudIPEntry>,
+    cache: TtlCache<u64, Vec<u8>>,
     next_ino: u64,
 }
 
@@ -70,6 +73,7 @@ impl StudIPFS {
             client,
             inodes: HashMap::new(),
             entries: HashMap::new(),
+            cache: TtlCache::new(50),
             next_ino: FUSE_ROOT_ID,
         };
         fs.populate(root);
@@ -145,7 +149,10 @@ impl Filesystem for StudIPFS {
     fn read(&mut self, _req: &Request, ino: u64, _fh: u64, offset: i64, size: u32, reply: ReplyData) {
         if let Some(StudIPEntry { id, kind: StudIPEntryType::File(_), .. }) = self.entries.get(&ino) {
 	        println!("read({}, offset={} size={})", ino, offset, size);
-            let data = &self.client.read_file(id).unwrap();
+	        if (!self.cache.contains_key(&ino)) {
+		        self.cache.insert(ino, self.client.read_file(id).unwrap(), TTL);
+	        }
+	        let data = self.cache.get(&ino).unwrap();
             let end = std::cmp::min(offset as usize+size as usize, data.len());
             reply.data(&data[offset as usize..end]);
         } else {
