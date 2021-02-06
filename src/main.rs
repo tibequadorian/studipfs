@@ -1,4 +1,5 @@
 use libc::ENOENT;
+use std::env;
 use std::ffi::OsStr;
 use std::time::{Duration, UNIX_EPOCH};
 use std::collections::HashMap;
@@ -6,7 +7,6 @@ use fuse::{Filesystem, Request, ReplyData, ReplyEntry, ReplyAttr, ReplyDirectory
 use ttl_cache::TtlCache;
 
 mod api;
-mod logins;
 
 
 const TTL: Duration = Duration::from_secs(60);
@@ -68,7 +68,7 @@ struct StudIPFS {
 }
 
 impl StudIPFS {
-    fn new(client: api::StudIPClient, root: ID) -> StudIPFS {
+    fn new(client: api::StudIPClient, root: &ID) -> StudIPFS {
         let mut fs = StudIPFS {
             client,
             inodes: HashMap::new(),
@@ -76,7 +76,7 @@ impl StudIPFS {
             cache: TtlCache::new(50),
             next_ino: FUSE_ROOT_ID,
         };
-        fs.populate(root);
+        fs.populate(root.clone());
         println!("fs populated with {} inodes", fs.next_ino-1);
         return fs;
     }
@@ -148,12 +148,11 @@ impl Filesystem for StudIPFS {
 
     fn read(&mut self, _req: &Request, ino: u64, _fh: u64, offset: i64, size: u32, reply: ReplyData) {
         if let Some(StudIPEntry { id, kind: StudIPEntryType::File(_), .. }) = self.entries.get(&ino) {
-	        println!("read({}, offset={} size={})", ino, offset, size);
-	        if (!self.cache.contains_key(&ino)) {
-		        self.cache.insert(ino, self.client.read_file(id).unwrap(), TTL);
-	        }
-	        let data = self.cache.get(&ino).unwrap();
-            let end = std::cmp::min(offset as usize+size as usize, data.len());
+            if !self.cache.contains_key(&ino) {
+                self.cache.insert(ino, self.client.read_file(id).unwrap(), TTL);
+            }
+            let data = self.cache.get(&ino).unwrap();
+            let end: usize = std::cmp::min(offset as usize+size as usize, data.len());
             reply.data(&data[offset as usize..end]);
         } else {
             panic!(); // shouldn't happen
@@ -173,18 +172,16 @@ impl Filesystem for StudIPFS {
     }
 }
 
-fn main() -> Result<(), minreq::Error> {
+fn main() {
+    let args: Vec<String> = env::args().collect();
+    if args.len() != 3 {
+        println!("Usage: studipfs <folder id> <mountpoint>");
+        return;
+    }
     let client = api::StudIPClient {
-        api_url: String::from(logins::API_URL),
-        auth: String::from(logins::AUTH)
+        api_url: env::var("STUDIP_API_URL").unwrap(),
+        auth:    env::var("STUDIP_TOKEN").unwrap(),
     };
-    let root = String::from(logins::ROOT);
-    let fs = StudIPFS::new(client, root);
-
-    // test
-    let mountpoint = "./mnt";
-    let options = vec![];
-    fuse::mount(fs, mountpoint, &options).unwrap();
-
-    Ok(())
+    let fs = StudIPFS::new(client, &args[1]);
+    fuse::mount(fs, &args[2], &vec![]).unwrap();
 }
