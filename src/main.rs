@@ -76,7 +76,7 @@ impl StudIPFS {
             cache: TtlCache::new(50),
             next_ino: FUSE_ROOT_ID,
         };
-        fs.populate(root.clone());
+        fs.populate(root);
         println!("fs populated with {} inodes", fs.next_ino-1);
         return fs;
     }
@@ -91,11 +91,11 @@ impl StudIPFS {
         self.next_ino += 1;
     }
 
-    fn populate(&mut self, id: ID) {
+    fn populate(&mut self, id: &ID) {
         let folder = self.client.get_folder(&id).unwrap();
         self.add(StudIPEntry::from_folder(&folder));
         for subfolder in folder.subfolders {
-            self.populate(subfolder.id);
+            self.populate(&subfolder.id);
         }
         for file in folder.file_refs {
             self.add(StudIPEntry::from_file(&file));
