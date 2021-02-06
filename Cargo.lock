@@ -2,24 +2,15 @@
 # It is not intended for manual editing.
 [[package]]
 name = "base64"
-version = "0.10.1"
+version = "0.13.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0b25d992356d2eb0ed82172f5248873db5560c4721f564b13cb5193bda5e668e"
-dependencies = [
- "byteorder",
-]
+checksum = "904dfeac50f3cdaba28fc6f57fdcddb75f49ed61346676a78c4ffe55877802fd"
 
 [[package]]
 name = "bumpalo"
 version = "3.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "12ae9db68ad7fac5fe51304d20f016c911539251075a214f8e663babefa35187"
-
-[[package]]
-name = "byteorder"
-version = "1.3.4"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "08c48aae112d48ed9f069b33538ea9e3e90aa263cfa3d1c24309612b1f7472de"
 
 [[package]]
 name = "cc"
@@ -36,7 +27,7 @@ checksum = "4785bdd1c96b2a846b2bd7cc02e86b6b3dbf14e7e53446c4f54c92a361040822"
 [[package]]
 name = "fuse"
 version = "0.4.0-dev"
-source = "git+https://github.com/zargony/fuse-rs#42e29d964e2b24e32e21b179b77e4d0d0a0857ac"
+source = "git+https://github.com/zargony/fuse-rs#39fde4a5c47ce370d228ac190f950bd835db7f47"
 dependencies = [
  "fuse-abi",
  "fuse-sys",
@@ -48,12 +39,12 @@ dependencies = [
 [[package]]
 name = "fuse-abi"
 version = "0.4.0-dev"
-source = "git+https://github.com/zargony/fuse-rs#42e29d964e2b24e32e21b179b77e4d0d0a0857ac"
+source = "git+https://github.com/zargony/fuse-rs#39fde4a5c47ce370d228ac190f950bd835db7f47"
 
 [[package]]
 name = "fuse-sys"
 version = "0.4.0-dev"
-source = "git+https://github.com/zargony/fuse-rs#42e29d964e2b24e32e21b179b77e4d0d0a0857ac"
+source = "git+https://github.com/zargony/fuse-rs#39fde4a5c47ce370d228ac190f950bd835db7f47"
 dependencies = [
  "pkg-config",
 ]
@@ -96,9 +87,9 @@ dependencies = [
 
 [[package]]
 name = "minreq"
-version = "2.1.0"
+version = "2.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "de24aea8b7ae2092e5bd3ae8efcf4ca8114f8a33982d4e269d2193c479822521"
+checksum = "85b112458b07e0864c7415847c423fe758c7189a28e72347e95d92c4bfd33f5d"
 dependencies = [
  "lazy_static",
  "rustls",
@@ -149,9 +140,9 @@ dependencies = [
 
 [[package]]
 name = "rustls"
-version = "0.16.0"
+version = "0.19.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b25a18b1bf7387f0145e7f8324e700805aade3842dd3db2e74e4cdeb4677c09e"
+checksum = "064fd21ff87c6e87ed4506e68beb42459caa4a0e2eb144932e6776768556980b"
 dependencies = [
  "base64",
  "log",

@@ -1,88 +1,170 @@
 use std::ffi::OsStr;
-use fuse::{Filesystem, Request, ReplyData, ReplyEntry, ReplyAttr, ReplyDirectory, FileAttr, FUSE_ROOT_ID};
+use std::time::{Duration, UNIX_EPOCH};
+use std::collections::HashMap;
+use fuse::{Filesystem, Request, ReplyData, ReplyEntry, ReplyAttr, ReplyDirectory, FileAttr, FileType, FUSE_ROOT_ID};
+use libc::ENOENT;
 
 mod api;
 mod logins;
 
-struct Entry {
-    id: String,
-    attr: Option<EntryAttr>
+const HELLO_TXT_CONTENT: &str = "Hello World!\n";
+const TTL: Duration = Duration::from_secs(1);
+
+type ID = String;
+
+struct StudIPFolder {
+    children: Vec<ID>,
 }
 
-struct EntryAttr {
+struct StudIPFile {
+
+}
+
+struct StudIPEntry {
+    id: ID,
+    parent: ID,
     name: String,
-    kind: EntryType
+    size: u64,
+    kind: StudIPEntryType,
 }
 
-impl Entry {
-    fn from_folder(folder: api::Subfolder) -> Entry {
-        Entry { id: folder.id, attr: None }
-    }
-    fn from_file(file: api::FileRef) -> Entry {
-        Entry { id: file.id, attr: None }
-    }
+enum StudIPEntryType {
+    Folder(StudIPFolder),
+    File(StudIPFile),
 }
 
-enum EntryType {
-    File,
-    Folder(Option<Vec<u64>>)
+impl StudIPEntry {
+    fn from_folder(folder: &api::Folder) -> StudIPEntry {
+        StudIPEntry {
+            id: folder.folder.id.clone(),
+            parent: folder.folder.parent_id.clone(),
+            name: folder.folder.name.clone(),
+            size: 0,
+            kind: StudIPEntryType::Folder(StudIPFolder {
+                children: folder.subfolders.iter().map(|f| f.id.clone())
+                    .chain(folder.file_refs.iter().map(|f| f.id.clone())).collect(),
+            }),
+        }
+    }
+
+    fn from_file(file: &api::FileRef) -> StudIPEntry {
+        StudIPEntry {
+            id: file.id.clone(),
+            parent: file.folder_id.clone(),
+            name: file.name.clone(),
+            size: file.size as u64,
+            kind: StudIPEntryType::File(StudIPFile {}),
+        }
+    }
 }
 
 struct StudIPFS {
     client: api::StudIPClient,
-    inodes: HashMap<u64, Entry>,
+    inodes: HashMap<ID, u64>,
+    entries: HashMap<u64, StudIPEntry>,
     next_ino: u64,
 }
 
 impl StudIPFS {
-    fn new(client: api::StudIPClient, root: String) -> StudIPFS {
+    fn new(client: api::StudIPClient, root: ID) -> StudIPFS {
         let mut fs = StudIPFS {
             client,
             inodes: HashMap::new(),
-            next_ino: FUSE_ROOT_ID
+            entries: HashMap::new(),
+            next_ino: FUSE_ROOT_ID,
         };
-        fs.add_entry(Entry { id: root, attr: None });
+        fs.populate(root);
+        println!("fs populated with {} inodes", fs.next_ino-1);
         return fs;
     }
 
-    fn add_entry(&mut self, entry: Entry) {
-        self.inodes.insert(self.next_ino, entry);
+    fn get_from_id(&self, id: &ID) -> &StudIPEntry {
+        self.entries.get(self.inodes.get(id).unwrap()).unwrap()
+    }
+
+    fn add(&mut self, entry: StudIPEntry) {
+        self.inodes.insert(entry.id.clone(), self.next_ino);
+        self.entries.insert(self.next_ino, entry);
         self.next_ino += 1;
     }
-    
-    fn populate(&mut self, ino: u64) {
-        let entry = self.inodes.get_mut(&ino).unwrap();
-        let folder = self.client.get_folder(&entry.id).unwrap();
-        //
+
+    fn populate(&mut self, id: ID) {
+        let folder = self.client.get_folder(&id).unwrap();
+        self.add(StudIPEntry::from_folder(&folder));
         for subfolder in folder.subfolders {
-            self.add_entry(Entry::from_folder(subfolder));
+            self.populate(subfolder.id);
         }
         for file in folder.file_refs {
-            self.add_entry(Entry::from_file(file));
+            self.add(StudIPEntry::from_file(&file));
+        }
+    }
+
+    fn get_attr(&self, entry: &StudIPEntry) -> FileAttr {
+        let ino = *self.inodes.get(&entry.id).unwrap();
+        FileAttr {
+            ino,
+            size: entry.size,
+            blocks: 0,
+            atime: UNIX_EPOCH,
+            mtime: UNIX_EPOCH,
+            ctime: UNIX_EPOCH,
+            crtime: UNIX_EPOCH,
+            kind: match entry.kind {
+                StudIPEntryType::Folder(_) => FileType::Directory,
+                StudIPEntryType::File(_)   => FileType::RegularFile,
+            },
+            perm: 0o555,
+            nlink: 0,
+            uid: 1000,
+            gid: 1000,
+            rdev: 0,
+            flags: 0,
         }
     }
 }
 
 impl Filesystem for StudIPFS {
-    fn lookup(&mut self, _req: &Request, parent: u64, name: &OsStr, _reply: ReplyEntry) {
-        println!("lookup({}, {})", parent, name.to_str().unwrap());
-        
+    fn lookup(&mut self, _req: &Request, parent: u64, name: &OsStr, reply: ReplyEntry) {
+        if let Some(StudIPEntry { kind: StudIPEntryType::Folder(StudIPFolder { children }), .. }) = self.entries.get(&parent) {
+            match children.iter().map(|id| self.get_from_id(id)).find(|e| e.name.as_str() == name) {
+                Some(e) => reply.entry(&TTL, &self.get_attr(e), 0),
+                None => reply.error(ENOENT),
+            };
+        } else {
+            panic!(); // shouldn't happen
+        }
     }
 
-    fn getattr(&mut self, _req: &Request, ino: u64, _reply: ReplyAttr) {
-        println!("getattr({}))", ino);
+    fn getattr(&mut self, _req: &Request, ino: u64, reply: ReplyAttr) {
+        if let Some(entry) = self.entries.get(&ino) {
+            reply.attr(&TTL, &self.get_attr(&entry));
+        } else {
+            panic!(); // shouldn't happen
+        }
     }
 
-    fn read(&mut self, _req: &Request, ino: u64, _fh: u64, _offset: i64, _size: u32, _reply: ReplyData) {
-        println!("read({})", ino);
+    fn read(&mut self, _req: &Request, ino: u64, _fh: u64, offset: i64, _size: u32, reply: ReplyData) {
+        if let Some(StudIPEntry { id, kind: StudIPEntryType::File(_), .. }) = self.entries.get(&ino) {
+	        println!("start download");
+            reply.data(&self.client.get_file(id).unwrap()[offset as usize..]);
+	        println!("end download");
+        } else {
+            panic!(); // shouldn't happen
+        }
     }
 
-    fn readdir(&mut self, _req: &Request, ino: u64, _fh: u64, _offset: i64, mut _reply: ReplyDirectory) {
-        println!("readdir({})", ino);
+    fn readdir(&mut self, _req: &Request, ino: u64, _fh: u64, offset: i64, mut reply: ReplyDirectory) {
+        if let Some(StudIPEntry { kind: StudIPEntryType::Folder(StudIPFolder { children }), .. }) = self.entries.get(&ino) {
+            let entries: Vec<&StudIPEntry> = children.iter().map(|id| self.get_from_id(id)).collect();
+            for (i, e) in entries.into_iter().enumerate().skip(offset as usize) {
+                reply.add(*self.inodes.get(&e.id).unwrap(), (i + 1) as i64, self.get_attr(e).kind, e.name.as_str());
+            }
+            reply.ok();
+        } else {
+            panic!(); // shouldn't happen
+        }
     }
 }
-
-use std::collections::HashMap;
 
 fn main() -> Result<(), minreq::Error> {
     let client = api::StudIPClient {
@@ -90,11 +172,12 @@ fn main() -> Result<(), minreq::Error> {
         auth: String::from(logins::AUTH)
     };
     let root = String::from(logins::ROOT);
-    let mut fs = StudIPFS::new(client, root);
-    fs.populate(1);
+    let fs = StudIPFS::new(client, root);
 
-    for e in fs.inodes.values() {
-        println!("{}", e.id);
-    }
+    // test
+    let mountpoint = "./mnt";
+    let options = vec![];
+    fuse::mount(fs, mountpoint, &options).unwrap();
+
     Ok(())
 }
