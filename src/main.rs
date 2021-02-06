@@ -7,7 +7,6 @@ use libc::ENOENT;
 mod api;
 mod logins;
 
-const HELLO_TXT_CONTENT: &str = "Hello World!\n";
 const TTL: Duration = Duration::from_secs(1);
 
 type ID = String;
@@ -143,11 +142,12 @@ impl Filesystem for StudIPFS {
         }
     }
 
-    fn read(&mut self, _req: &Request, ino: u64, _fh: u64, offset: i64, _size: u32, reply: ReplyData) {
+    fn read(&mut self, _req: &Request, ino: u64, _fh: u64, offset: i64, size: u32, reply: ReplyData) {
         if let Some(StudIPEntry { id, kind: StudIPEntryType::File(_), .. }) = self.entries.get(&ino) {
-	        println!("start download");
-            reply.data(&self.client.get_file(id).unwrap()[offset as usize..]);
-	        println!("end download");
+	        println!("read({}, offset={} size={})", ino, offset, size);
+            let data = &self.client.read_file(id).unwrap();
+            let end = std::cmp::min(offset as usize+size as usize, data.len());
+            reply.data(&data[offset as usize..end]);
         } else {
             panic!(); // shouldn't happen
         }

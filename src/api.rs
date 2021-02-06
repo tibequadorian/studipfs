@@ -56,7 +56,7 @@ impl StudIPClient {
         minreq::get(url).with_header("Authorization", &self.auth)
     }
 
-    pub fn get_file(&self, id: &String) -> Result<Vec<u8>, minreq::Error> {
+    pub fn read_file(&self, id: &String) -> Result<Vec<u8>, minreq::Error> {
         let url = format!("{}/file/{}/download", self.api_url, id);
         return Ok(self.get(url).send()?.into_bytes());
     }
