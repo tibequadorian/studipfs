@@ -13,48 +13,40 @@ const TTL: Duration = Duration::from_secs(60);
 
 type ID = String;
 
-struct StudIPFolder {
-    children: Vec<ID>,
-}
-
-struct StudIPFile {
-
-}
-
-struct StudIPEntry {
+struct FSEntry {
     id: ID,
     parent: ID,
     name: String,
     size: u64,
-    kind: StudIPEntryType,
+    kind: FSEntryType,
 }
 
-enum StudIPEntryType {
-    Folder(StudIPFolder),
-    File(StudIPFile),
+enum FSEntryType {
+    Folder { children: Vec<ID> },
+    File,
 }
 
-impl StudIPEntry {
-    fn from_folder(folder: &api::Folder) -> StudIPEntry {
-        StudIPEntry {
+impl FSEntry {
+    fn from_folder(folder: &api::Folder) -> FSEntry {
+        FSEntry {
             id: folder.folder.id.clone(),
             parent: folder.folder.parent_id.clone(),
             name: folder.folder.name.clone(),
             size: 0,
-            kind: StudIPEntryType::Folder(StudIPFolder {
+            kind: FSEntryType::Folder {
                 children: folder.subfolders.iter().map(|f| f.id.clone())
                     .chain(folder.file_refs.iter().map(|f| f.id.clone())).collect(),
-            }),
+            },
         }
     }
 
-    fn from_file(file: &api::FileRef) -> StudIPEntry {
-        StudIPEntry {
+    fn from_file(file: &api::FileRef) -> FSEntry {
+        FSEntry {
             id: file.id.clone(),
             parent: file.folder_id.clone(),
             name: file.name.clone(),
             size: file.size as u64,
-            kind: StudIPEntryType::File(StudIPFile {}),
+            kind: FSEntryType::File,
         }
     }
 }
@@ -62,7 +54,7 @@ impl StudIPEntry {
 struct StudIPFS {
     client: api::StudIPClient,
     inodes: HashMap<ID, u64>,
-    entries: HashMap<u64, StudIPEntry>,
+    entries: HashMap<u64, FSEntry>,
     cache: TtlCache<u64, Vec<u8>>,
     next_ino: u64,
 }
@@ -81,11 +73,11 @@ impl StudIPFS {
         return fs;
     }
 
-    fn get_from_id(&self, id: &ID) -> &StudIPEntry {
+    fn get_from_id(&self, id: &ID) -> &FSEntry {
         self.entries.get(self.inodes.get(id).unwrap()).unwrap()
     }
 
-    fn add(&mut self, entry: StudIPEntry) {
+    fn add(&mut self, entry: FSEntry) {
         self.inodes.insert(entry.id.clone(), self.next_ino);
         self.entries.insert(self.next_ino, entry);
         self.next_ino += 1;
@@ -93,16 +85,16 @@ impl StudIPFS {
 
     fn populate(&mut self, id: &ID) {
         let folder = self.client.get_folder(&id).unwrap();
-        self.add(StudIPEntry::from_folder(&folder));
+        self.add(FSEntry::from_folder(&folder));
         for subfolder in folder.subfolders {
             self.populate(&subfolder.id);
         }
         for file in folder.file_refs {
-            self.add(StudIPEntry::from_file(&file));
+            self.add(FSEntry::from_file(&file));
         }
     }
 
-    fn get_attr(&self, entry: &StudIPEntry) -> FileAttr {
+    fn get_attr(&self, entry: &FSEntry) -> FileAttr {
         let ino = *self.inodes.get(&entry.id).unwrap();
         FileAttr {
             ino,
@@ -113,8 +105,8 @@ impl StudIPFS {
             ctime: UNIX_EPOCH,
             crtime: UNIX_EPOCH,
             kind: match entry.kind {
-                StudIPEntryType::Folder(_) => FileType::Directory,
-                StudIPEntryType::File(_)   => FileType::RegularFile,
+                FSEntryType::Folder{..} => FileType::Directory,
+                FSEntryType::File       => FileType::RegularFile,
             },
             perm: 0o555,
             nlink: 0,
@@ -130,48 +122,47 @@ impl StudIPFS {
 
 impl Filesystem for StudIPFS {
     fn lookup(&mut self, _req: &Request, parent: u64, name: &OsStr, reply: ReplyEntry) {
-        if let Some(StudIPEntry { kind: StudIPEntryType::Folder(StudIPFolder { children }), .. }) = self.entries.get(&parent) {
+        if let Some(FSEntry { kind: FSEntryType::Folder { children }, .. }) = self.entries.get(&parent) {
             match children.iter().map(|id| self.get_from_id(id)).find(|e| e.name.as_str() == name) {
                 Some(e) => reply.entry(&TTL, &self.get_attr(e), 0),
                 None => reply.error(ENOENT),
             };
-        } else {
-            panic!(); // shouldn't happen
         }
     }
 
     fn getattr(&mut self, _req: &Request, ino: u64, reply: ReplyAttr) {
         if let Some(entry) = self.entries.get(&ino) {
             reply.attr(&TTL, &self.get_attr(&entry));
-        } else {
-            panic!(); // shouldn't happen
         }
     }
 
     fn read(&mut self, _req: &Request, ino: u64, _fh: u64, offset: i64, size: u32, _flags: i32, _lock: Option<u64>, reply: ReplyData) {
-        if let Some(StudIPEntry { id, kind: StudIPEntryType::File(_), .. }) = self.entries.get(&ino) {
+        if let Some(FSEntry { id, kind: FSEntryType::File, .. }) = self.entries.get(&ino) {
             if !self.cache.contains_key(&ino) {
                 self.cache.insert(ino, self.client.read_file(id).unwrap(), TTL);
             }
             let data = self.cache.get(&ino).unwrap();
             let end: usize = std::cmp::min(offset as usize+size as usize, data.len());
             reply.data(&data[offset as usize..end]);
-        } else {
-            panic!(); // shouldn't happen
         }
     }
 
     fn readdir(&mut self, _req: &Request, ino: u64, _fh: u64, offset: i64, mut reply: ReplyDirectory) {
-        if let Some(StudIPEntry { kind: StudIPEntryType::Folder(StudIPFolder { children }), .. }) = self.entries.get(&ino) {
-            let entries: Vec<&StudIPEntry> = children.iter().map(|id| self.get_from_id(id)).collect();
-            for (i, e) in entries.into_iter().enumerate().skip(offset as usize) {
-                if reply.add(*self.inodes.get(&e.id).unwrap(), (i + 1) as i64, self.get_attr(e).kind, e.name.as_str()) {
-	                break;
+        if let Some(FSEntry { parent, kind: FSEntryType::Folder{ children }, .. }) = self.entries.get(&ino) {
+            let mut entries = vec![(ino, FileType::Directory, ".")];
+            if let Some(parent_ino) = self.inodes.get(parent) {
+                entries.push((*parent_ino, FileType::Directory, ".."));
+            }
+            entries.extend(
+                children.iter().map(|id| self.get_from_id(id))
+                    .map(|e| (*self.inodes.get(&e.id).unwrap(), self.get_attr(e).kind, e.name.as_str()))
+            );
+            for (i, e) in entries.iter().enumerate().skip(offset as usize) {
+                if reply.add(e.0, (i+1) as i64, e.1, e.2) {
+                    break;
                 }
             }
             reply.ok();
-        } else {
-            panic!(); // shouldn't happen
         }
     }
 }
@@ -184,7 +175,7 @@ fn main() {
     }
     let client = api::StudIPClient {
         api_url: env::var("STUDIP_API_URL").unwrap(),
-        auth:    env::var("STUDIP_TOKEN").unwrap(),
+        auth: env::var("STUDIP_TOKEN").unwrap(),
     };
     let fs = StudIPFS::new(client, &args[1]);
     fuser::mount(fs, &args[2], &vec![]).unwrap();
