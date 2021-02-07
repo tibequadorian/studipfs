@@ -3,7 +3,7 @@ use std::env;
 use std::ffi::OsStr;
 use std::time::{Duration, UNIX_EPOCH};
 use std::collections::HashMap;
-use fuse::{Filesystem, Request, ReplyData, ReplyEntry, ReplyAttr, ReplyDirectory, FileAttr, FileType, FUSE_ROOT_ID};
+use fuser::{Filesystem, Request, ReplyData, ReplyEntry, ReplyAttr, ReplyDirectory, FileAttr, FileType, FUSE_ROOT_ID};
 use ttl_cache::TtlCache;
 
 mod api;
@@ -121,6 +121,8 @@ impl StudIPFS {
             uid: 1000,
             gid: 1000,
             rdev: 0,
+            blksize: 512,
+            padding: 0,
             flags: 0,
         }
     }
@@ -146,7 +148,7 @@ impl Filesystem for StudIPFS {
         }
     }
 
-    fn read(&mut self, _req: &Request, ino: u64, _fh: u64, offset: i64, size: u32, reply: ReplyData) {
+    fn read(&mut self, _req: &Request, ino: u64, _fh: u64, offset: i64, size: u32, _flags: i32, _lock: Option<u64>, reply: ReplyData) {
         if let Some(StudIPEntry { id, kind: StudIPEntryType::File(_), .. }) = self.entries.get(&ino) {
             if !self.cache.contains_key(&ino) {
                 self.cache.insert(ino, self.client.read_file(id).unwrap(), TTL);
@@ -163,7 +165,9 @@ impl Filesystem for StudIPFS {
         if let Some(StudIPEntry { kind: StudIPEntryType::Folder(StudIPFolder { children }), .. }) = self.entries.get(&ino) {
             let entries: Vec<&StudIPEntry> = children.iter().map(|id| self.get_from_id(id)).collect();
             for (i, e) in entries.into_iter().enumerate().skip(offset as usize) {
-                reply.add(*self.inodes.get(&e.id).unwrap(), (i + 1) as i64, self.get_attr(e).kind, e.name.as_str());
+                if reply.add(*self.inodes.get(&e.id).unwrap(), (i + 1) as i64, self.get_attr(e).kind, e.name.as_str()) {
+	                break;
+                }
             }
             reply.ok();
         } else {
@@ -183,5 +187,5 @@ fn main() {
         auth:    env::var("STUDIP_TOKEN").unwrap(),
     };
     let fs = StudIPFS::new(client, &args[1]);
-    fuse::mount(fs, &args[2], &vec![]).unwrap();
+    fuser::mount(fs, &args[2], &vec![]).unwrap();
 }

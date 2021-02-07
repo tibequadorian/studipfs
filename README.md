@@ -6,7 +6,7 @@
 
 The [rust toolchain](https://www.rust-lang.org/tools/install) is required for building.
 
-Compilation of fuse crate requires `fuse >= 2.6` (not `3.x`).
+Compilation of fuser crate has additional [dependencies](https://crates.io/crates/fuser#dependencies).
 
 ### Build & Install
 
