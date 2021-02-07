@@ -15,8 +15,6 @@ Install to local environment:
 $ cargo install --path .
 ```
 
-Don't forget to `source "$HOME/.cargo/env"`
-
 ### Usage
 
 Set API base URL:
@@ -31,7 +29,7 @@ $ export STUDIP_TOKEN=$(echo -n "$username:$password" | base64 | sed -e 's/^/Bas
 
 At the time of writing, there's no way to directly pass the course id (`cid`) from a URL like in
 `https://studip.example.org/dispatch.php/course/overview?cid=6675636b206361706974616c69736d21`.
-However the folder id of a course can be obtained with this shell command (uses `curl` and `jq`):
+However the folder id of a course can be obtained with this shell command (using `curl` and `jq`):
 
 ```sh
 $ curl -s -u '$username:$password' "$STUDIP_API_URL/course/$cid/top_folder" | jq -r '.id'
