@@ -1,12 +1,18 @@
 # studipfs
 
+## About
+
+`studipfs` is a filesystem client to mount any Stud.IP directory.
+
+It currently provides basic functionality while keeping a very small code base. PRs are very welcome!
+
 ## Instructions
 
 ### Prerequisites
 
 The [rust toolchain](https://www.rust-lang.org/tools/install) is required for building.
 
-Compilation of fuser crate has additional [dependencies](https://crates.io/crates/fuser#dependencies).
+Compilation of `fuser` crate has additional [dependencies](https://crates.io/crates/fuser#dependencies).
 
 ### Build & Install
 
