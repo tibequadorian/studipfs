@@ -38,7 +38,7 @@ At the time of writing, there's no way to directly pass the course id (`cid`) fr
 However the folder id of a course can be obtained with this shell command (using `curl` and `jq`):
 
 ```sh
-$ curl -s -u '$username:$password' "$STUDIP_API_URL/course/$cid/top_folder" | jq -r '.id'
+$ curl -s -u "$username:$password" "$STUDIP_API_URL/course/$cid/top_folder" | jq -r '.id'
 ```
 
 Mount and run in background:
