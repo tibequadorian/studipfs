@@ -114,7 +114,6 @@ impl StudIPFS {
             gid: 1000,
             rdev: 0,
             blksize: 512,
-            padding: 0,
             flags: 0,
         }
     }
@@ -178,5 +177,5 @@ fn main() {
         auth: env::var("STUDIP_TOKEN").unwrap(),
     };
     let fs = StudIPFS::new(client, &args[1]);
-    fuser::mount(fs, &args[2], &vec![]).unwrap();
+    fuser::mount2(fs, &args[2], &vec![]).unwrap();
 }

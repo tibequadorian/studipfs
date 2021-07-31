@@ -6,7 +6,7 @@ edition = "2018"
 
 [dependencies]
 libc = "0.2"
-fuser = "0.7"
-minreq = { version = "2.3", features = ["https", "json-using-serde"] }
+fuser = "0.8"
+minreq = { version = "2.4", features = ["https", "json-using-serde"] }
 serde = { version = "1.0", features = ["derive"] }
 ttl_cache = "0.5"
