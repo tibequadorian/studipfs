@@ -1,7 +1,7 @@
 use libc::ENOENT;
 use std::env;
 use std::ffi::OsStr;
-use std::time::{Duration, UNIX_EPOCH};
+use std::time::{Duration, UNIX_EPOCH, SystemTime};
 use std::collections::HashMap;
 use fuser::{Filesystem, Request, ReplyData, ReplyEntry, ReplyAttr, ReplyDirectory, FileAttr, FileType, FUSE_ROOT_ID};
 use ttl_cache::TtlCache;
@@ -19,6 +19,8 @@ struct FSEntry {
     name: String,
     size: u64,
     kind: FSEntryType,
+    change: SystemTime,
+    create: SystemTime,
 }
 
 enum FSEntryType {
@@ -37,6 +39,8 @@ impl FSEntry {
                 children: folder.subfolders.iter().map(|f| f.id.clone())
                     .chain(folder.file_refs.iter().map(|f| f.id.clone())).collect(),
             },
+            change: UNIX_EPOCH + Duration::from_secs(folder.folder.chdate as u64),
+            create: UNIX_EPOCH + Duration::from_secs(folder.folder.mkdate as u64),
         }
     }
 
@@ -47,6 +51,8 @@ impl FSEntry {
             name: file.name.clone(),
             size: file.size as u64,
             kind: FSEntryType::File,
+            change: UNIX_EPOCH + Duration::from_secs(file.chdate as u64),
+            create: UNIX_EPOCH + Duration::from_secs(file.mkdate as u64),
         }
     }
 }
@@ -101,14 +107,17 @@ impl StudIPFS {
             size: entry.size,
             blocks: 0,
             atime: UNIX_EPOCH,
-            mtime: UNIX_EPOCH,
-            ctime: UNIX_EPOCH,
-            crtime: UNIX_EPOCH,
+            mtime: entry.change,
+            ctime: entry.change,
+            crtime: entry.create,
             kind: match entry.kind {
                 FSEntryType::Folder{..} => FileType::Directory,
                 FSEntryType::File       => FileType::RegularFile,
             },
-            perm: 0o555,
+            perm: match entry.kind {
+                FSEntryType::Folder{..} => 0o755,
+                FSEntryType::File       => 0o644,
+            },
             nlink: 0,
             uid: 1000,
             gid: 1000,

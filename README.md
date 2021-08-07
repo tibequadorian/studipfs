@@ -23,6 +23,8 @@ $ cargo install --path .
 
 ### Usage
 
+**CAUTION: Storing login data in enviroment variables is extremely insecure! Use at your own risk.**
+
 Set API base URL:
 ```sh
 $ export STUDIP_API_URL="https://studip.example.org/api.php"
